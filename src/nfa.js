@@ -1,13 +1,13 @@
 /*
-  Thompson NFA Construction and Search.
+    Construction de Thompson et recherches
 */
 
 /*
-  A state in Thompson's NFA can either have 
-   - a single symbol transition to a state
-    or
-   - up to two epsilon transitions to another states
-  but not both.   
+  Un État de la AFN de Thompson peut soit avoir 
+   - un symbole unique de transition vers un État
+    ou
+   - jusqu'à deux transitions epsilon vers d'autres États
+  mais pas les deux.   
 */
 function createState(isEnd) {
     return {
@@ -22,14 +22,14 @@ function addEpsilonTransition(from, to) {
 }
 
 /*
-  Thompson's NFA state can have only one transition to another state for a given symbol.
+  L'État de la AFN de Thompson ne peut avoir qu'une seule transition vers un autre État pour un symbole donné.
 */
 function addTransition(from, to, symbol) {
     from.transition[symbol] = to;
 }
 
 /*
-  Construct an NFA that recognizes only the empty string.
+  Construisez une AFN qui ne reconnaît que la chaîne vide.
 */
 function fromEpsilon() {
     const start = createState(false);
@@ -40,7 +40,7 @@ function fromEpsilon() {
 }
 
 /* 
-   Construct an NFA that recognizes only a single character string.
+ Construire une AFN qui ne reconnaît qu'une seule chaîne de caractères.
 */
 function fromSymbol(symbol) {
     const start = createState(false);
@@ -51,7 +51,7 @@ function fromSymbol(symbol) {
 }
 
 /* 
-   Concatenates two NFAs.
+   Concatène deux AFN.
 */
 function concat(first, second) {
     addEpsilonTransition(first.end, second.start);
@@ -61,7 +61,7 @@ function concat(first, second) {
 }
 
 /* 
-   Unions two NFAs.
+   Unions de AFNs
 */
 function union(first, second) {
     const start = createState(false);
@@ -80,7 +80,7 @@ function union(first, second) {
 
 
 /* 
-   Apply Closure (Kleene's Star) on an NFA.
+   Appliquer la fermeture (Kleene's Star) sur un AFN.
 */
 function closure(nfa) {
     const start = createState(false);
@@ -97,40 +97,7 @@ function closure(nfa) {
 }
 
 /*
-    Zero-or-one of an NFA.
-*/
-
-function zeroOrOne(nfa) {
-    const start = createState(false);
-    const end = createState(true);
-
-    addEpsilonTransition(start, end);
-    addEpsilonTransition(start, nfa.start);
-
-    addEpsilonTransition(nfa.end, end);
-    nfa.end.isEnd = false;
-
-    return { start, end };
-}
-
-/*
-    One on more of an NFA.
-*/
-
-function oneOrMore(nfa) {
-    const start = createState(false);
-    const end = createState(true);
-
-    addEpsilonTransition(start, nfa.start);
-    addEpsilonTransition(nfa.end, end);
-    addEpsilonTransition(nfa.end, nfa.start);
-    nfa.end.isEnd = false;
-
-    return { start, end };
-}
-
-/*
-  Converts a postfix regular expression into a Thompson NFA.
+  Convertit une expression régulière postfix en une NFA Thompson.
 */
 function toNFA(postfixExp) {
     if (postfixExp === '') {
@@ -140,131 +107,38 @@ function toNFA(postfixExp) {
     const stack = [];
 
     for (const token of postfixExp) {
+
         if (token === '*') {
+
             stack.push(closure(stack.pop()));
-        } else if (token === "?") {
-            stack.push(zeroOrOne(stack.pop()));
-        } else if (token === "+") {
-            stack.push(oneOrMore(stack.pop()));
-        } else if (token === '|') {
+
+        }  else if (token === '|') {
+
             const right = stack.pop();
             const left = stack.pop();
             stack.push(union(left, right));
+
         } else if (token === '.') {
+
             const right = stack.pop();
             const left = stack.pop();
             stack.push(concat(left, right));
+
         } else {
+
             stack.push(fromSymbol(token));
+            
         }
     }
 
     return stack.pop();
 }
 
-/*
-  Regex to NFA construction using a parse tree.
-*/
-const { toParseTree } = require('./parser2');
-
-function toNFAfromParseTree(root) {
-    if (root.label === 'Expr') {
-        const term = toNFAfromParseTree(root.children[0]);
-        if (root.children.length === 3) // Expr -> Term '|' Expr
-            return union(term, toNFAfromParseTree(root.children[2]));
-
-        return term; // Expr -> Term
-    }
-
-    if (root.label === 'Term') {
-        const factor = toNFAfromParseTree(root.children[0]);
-        if (root.children.length === 2) // Term -> Factor Term
-            return concat(factor, toNFAfromParseTree(root.children[1]));
-
-        return factor; // Term -> Factor
-    }
-
-    if (root.label === 'Factor') {
-        const atom = toNFAfromParseTree(root.children[0]);
-        if (root.children.length === 2) { // Factor -> Atom MetaChar
-            const meta = root.children[1].label;
-            if (meta === '*')
-                return closure(atom);
-            if (meta === '+')
-                return oneOrMore(atom);
-            if (meta === '?')
-                return zeroOrOne(atom);
-        }
-
-        return atom; // Factor -> Atom
-    }
-
-    if (root.label === 'Atom') {
-        if (root.children.length === 3) // Atom -> '(' Expr ')'
-            return toNFAfromParseTree(root.children[1]);
-
-        return toNFAfromParseTree(root.children[0]); // Atom -> Char
-    }
-
-    if (root.label === 'Char') {
-        if (root.children.length === 2) // Char -> '\' AnyChar
-            return fromSymbol(root.children[1].label);
-
-        return fromSymbol(root.children[0].label); // Char -> AnyCharExceptMeta
-    }
-
-    throw new Error('Unrecognized node label ' + root.label);
-}
-
-function toNFAFromInfixExp(infixExp) {
-    if (infixExp === '')
-        return fromEpsilon();
-
-    return toNFAfromParseTree(toParseTree(infixExp));
-}
-
-/*
-  Process a string through an NFA by recurisively (depth-first) traversing all the possible paths until finding a matching one.
-  
-  The NFA has N states, from each state it can go to at most N possible states, yet there might be at most 2^N possible paths, 
-  therefore, worst case it'll end up going through all of them until it finds a match (or not), resulting in very slow runtimes.
-*/
-function recursiveBacktrackingSearch(state, visited, input, position) {
-    if (visited.includes(state)) {
-        return false;
-    }
-
-    visited.push(state);
-
-    if (position === input.length) {
-        if (state.isEnd) {
-            return true;
-        }
-
-        if (state.epsilonTransitions.some(s => recursiveBacktrackingSearch(s, visited, input, position))) {
-            return true;
-        }
-    } else {
-        const nextState = state.transition[input[position]];
-
-        if (nextState) {
-            if (recursiveBacktrackingSearch(nextState, [], input, position + 1)) {
-                return true;
-            }
-        } else {
-            if (state.epsilonTransitions.some(s => recursiveBacktrackingSearch(s, visited, input, position))) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-}
-
 /* 
-   Follows through the epsilon transitions of a state until reaching
-   a state with a symbol transition which gets added to the set of next states.
+   Suit les transitions epsilon d'un État jusqu'à ce qu'il atteigne
+   un État avec une transition de symbole qui s'ajoute à l'ensemble des États suivants.
 */
+
 function addNextState(state, nextStates, visited) {
     if (state.epsilonTransitions.length) {
         for (const st of state.epsilonTransitions) {
@@ -279,15 +153,15 @@ function addNextState(state, nextStates, visited) {
 }
 
 /*
-  Process a string through an NFA. For each input symbol it transitions into in multiple states at the same time.
-  The string is matched if after reading the last symbol, is has transitioned into at least one end state.
+  Traiter une chaîne par le biais d'une NFA. Pour chaque symbole d'entrée, il passe dans plusieurs états en même temps.
+  La chaîne correspond si, après avoir lu le dernier symbole, elle a effectué une transition vers au moins un état final.
 
-  For an NFA with N states in can be at at most N states at a time. This algorighm finds a match by processing the input word once.
+  Pour un NFA avec N états en peut être au plus N états à la fois. Cet algorithme trouve une correspondance en traitant le mot d'entrée une fois.
 */
 function search(nfa, word) {
     let currentStates = [];
-    /* The initial set of current states is either the start state or
-       the set of states reachable by epsilon transitions from the start state */
+    /* L'ensemble initial des états actuels est soit l'état de départ, soit
+       l'ensemble des états accessibles par les transitions epsilon à partir de l'état de départ */
     addNextState(nfa.start, currentStates, []);
 
     for (const symbol of word) {
@@ -307,12 +181,10 @@ function search(nfa, word) {
 }
 
 function recognize(nfa, word) {
-    // return recursiveBacktrackingSearch(nfa.start, [], word, 0);
     return search(nfa, word);
 }
 
 module.exports = {
     toNFA,
-    toNFAFromInfixExp,
     recognize
 };
